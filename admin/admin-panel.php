@@ -2,12 +2,13 @@
 
 function invite_anyone_admin_add() {
 
-	$plugin_page = add_submenu_page( 'bp-general-settings', __( 'Invite Anyone', 'bp-invite-anyone' ), __( 'Invite Anyone', 'bp-invite-anyone' ), 'manage_options', 'invite-anyone', 'invite_anyone_admin_panel' );
+	$parent = bp_core_do_network_admin() ? 'settings.php' : 'options-general.php';
+	$plugin_page = add_submenu_page( $parent, __( 'Invite Anyone', 'bp-invite-anyone' ), __( 'Invite Anyone', 'bp-invite-anyone' ), 'manage_options', 'invite-anyone', 'invite_anyone_admin_panel' );
 
 	add_action( "admin_print_scripts-$plugin_page", 'invite_anyone_admin_scripts' );
 	add_action( "admin_print_styles-$plugin_page", 'invite_anyone_admin_styles' );
 }
-add_action( is_multisite() && function_exists( 'is_network_admin' ) ? 'network_admin_menu' : 'admin_menu', 'invite_anyone_admin_add', 80 );
+add_action( bp_core_admin_hook(), 'invite_anyone_admin_add', 80 );
 
 /* Stolen from Welcome Pack - thanks, Paul! */
 function invite_anyone_admin_add_action_link( $links, $file ) {

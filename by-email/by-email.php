@@ -227,7 +227,7 @@ function invite_anyone_activate_user( $user_id, $key, $user ) {
 		$inviters 	= array_unique( $inviters );
 
 		// Friendship requests
-		if ( bp_is_active( 'friends' ) ) {
+		if ( bp_is_active( 'friends' ) && apply_filters( 'invite_anyone_send_friend_requests_on_acceptance', true ) ) {
 			if ( function_exists( 'friends_add_friend' ) ) {
 				foreach ( $inviters as $inviter ) {
 					friends_add_friend( $inviter, $user_id );
@@ -236,7 +236,7 @@ function invite_anyone_activate_user( $user_id, $key, $user ) {
 		}
 
 		// BuddyPress Followers support
-		if ( function_exists( 'bp_follow_start_following' ) ) {
+		if ( function_exists( 'bp_follow_start_following' ) && apply_filters( 'invite_anyone_send_follow_requests_on_acceptance', true ) ) {
 			foreach ( $inviters as $inviter ) {
 				bp_follow_start_following( array( 'leader_id' => $user_id, 'follower_id' => $inviter ) );
 				bp_follow_start_following( array( 'leader_id' => $inviter, 'follower_id' => $user_id ) );
@@ -462,6 +462,12 @@ function invite_anyone_screen_one_content() {
 
 	$iaoptions = invite_anyone_options();
 
+	// Hack - catch already=accepted
+	if ( ! empty( $_GET['already'] ) && 'accepted' === $_GET['already'] && bp_is_my_profile() ) {
+		_e( 'It looks like you&#8217;ve already accepted your invitation to join the site.', 'invite-anyone' );
+		return;
+	}
+
 	// If the user has maxed out his invites, no need to go on
 	if ( !empty( $iaoptions['email_limit_invites_toggle'] ) && $iaoptions['email_limit_invites_toggle'] == 'yes' && !current_user_can( 'delete_others_pages' ) ) {
 		$sent_invites       = invite_anyone_get_invitations_by_inviter_id( bp_displayed_user_id() );
@@ -567,8 +573,14 @@ function invite_anyone_screen_one_content() {
 			<?php endif ?>
 
 			<div class="manual-email">
-				<p><?php _e( 'Enter email addresses below, one per line.', 'bp-invite-anyone' ) ?><?php if( invite_anyone_allowed_domains() ) : ?> <?php _e( 'You can only invite people whose email addresses end in one of the following domains:', 'bp-invite-anyone' ) ?> <?php echo invite_anyone_allowed_domains(); ?><?php endif; ?></p>
+				<p>
+					<?php _e( 'Enter email addresses below, one per line.', 'bp-invite-anyone' ) ?>
+					<?php if( invite_anyone_allowed_domains() ) : ?> <?php _e( 'You can only invite people whose email addresses end in one of the following domains:', 'bp-invite-anyone' ) ?> <?php echo invite_anyone_allowed_domains(); ?><?php endif; ?>
+				</p>
 
+				<?php if ( false !== $max_no_invites = invite_anyone_max_invites() ) : ?>
+					<p class="description"><?php printf( __( 'You can invite a maximum of %s people at a time.', 'bp-invite-anyone' ), $max_no_invites ) ?></p>
+				<?php endif ?>
 				<?php invite_anyone_email_fields( $returned_data['error_emails'] ) ?>
 			</div>
 
@@ -592,6 +604,7 @@ function invite_anyone_screen_one_content() {
 		<li>
 			<?php if ( $iaoptions['message_is_customizable'] == 'yes' ) : ?>
 				<label for="invite-anyone-custom-message"><?php _e( '(optional) Customize the text of the invitation.', 'bp-invite-anyone' ) ?></label>
+				<p class="description"><?php _e( 'The message will also contain a custom footer containing links to accept the invitation or opt out of further email invitations from this site.', 'bp-invite-anyone' ) ?></p>
 					<textarea name="invite_anyone_custom_message" id="invite-anyone-custom-message" cols="40" rows="10"><?php echo invite_anyone_invitation_message( $returned_message ) ?></textarea>
 			<?php else : ?>
 				<label for="invite-anyone-custom-message"><?php _e( 'Message:', 'bp-invite-anyone' ) ?></label>
@@ -599,7 +612,6 @@ function invite_anyone_screen_one_content() {
 
 				<input type="hidden" name="invite_anyone_custom_message" value="<?php echo invite_anyone_invitation_message() ?>" />
 			<?php endif; ?>
-				<p><?php _e( 'The message will also contain a custom footer containing links to accept the invitation or opt out of further email invitations from this site.', 'bp-invite-anyone' ) ?></p>
 
 		</li>
 
@@ -903,18 +915,16 @@ function invite_anyone_wildcard_replace( $text, $email = false ) {
 	global $bp;
 
 	$inviter_name = $bp->loggedin_user->userdata->display_name;
-	$site_name = get_bloginfo('name');
-	$inviter_url = bp_loggedin_user_domain();
-	$accept_link = apply_filters( 'invite_anyone_accept_url', site_url( BP_REGISTER_SLUG ) . '/accept-invitation/' . urlencode($email) );
+	$site_name    = get_bloginfo( 'name' );
+	$inviter_url  = bp_loggedin_user_domain();
+	$accept_link  = apply_filters( 'invite_anyone_accept_url', bp_get_root_domain() . '/' . bp_get_signup_slug() . '/accept-invitation/' . urlencode( $email ) );
 	$opt_out_link = site_url( BP_REGISTER_SLUG ) . '/opt-out/' . urlencode( $email );
-
 
 	$text = str_replace( '%%INVITERNAME%%', $inviter_name, $text );
 	$text = str_replace( '%%INVITERURL%%', $inviter_url, $text );
 	$text = str_replace( '%%SITENAME%%', $site_name, $text );
 	$text = str_replace( '%%OPTOUTURL%%', $opt_out_link, $text );
 	$text = str_replace( '%%ACCEPTURL%%', $accept_link, $text );
-
 
 	/* Adding single % replacements because lots of people are making the mistake */
 	$text = str_replace( '%INVITERNAME%', $inviter_name, $text );
@@ -924,6 +934,14 @@ function invite_anyone_wildcard_replace( $text, $email = false ) {
 	$text = str_replace( '%ACCEPTURL%', $accept_link, $text );
 
 	return $text;
+}
+
+/**
+ * Get the max allowed invites
+ */
+function invite_anyone_max_invites() {
+	$options = invite_anyone_options();
+	return isset( $options['max_invites'] ) ? intval( $options['max_invites'] ) : false;
 }
 
 function invite_anyone_allowed_domains() {
@@ -1061,7 +1079,8 @@ function invite_anyone_process_invitations( $data ) {
 	}
 
 	// Max number of invites sent
-	if ( !empty( $options['email_limit_invites_toggle'] ) && !current_user_can( 'delete_others_pages' ) ) {
+	$limit_total_invites = !empty( $options['email_limit_invites_toggle'] ) && 'no' != $options['email_limit_invites_toggle'];
+	if ( $limit_total_invites && !current_user_can( 'delete_others_pages' ) ) {
 		$sent_invites = invite_anyone_get_invitations_by_inviter_id( bp_loggedin_user_id() );
 		$sent_invites_count      = (int) $sent_invites->post_count;
 		$remaining_invites_count = (int) $options['limit_invites_per_user'] - $sent_invites_count;
@@ -1261,4 +1280,32 @@ function invite_anyone_validate_email( $user_email ) {
 	return apply_filters( 'invite_anyone_validate_email', $status, $user_email );
 }
 
-?>
+/**
+ * Catches attempts to reaccept an invitation, and redirects appropriately
+ *
+ * If you attempt to access the register page when logged in, you get bounced
+ * to the home page. This is a BP feature. Because accept-invitation is a
+ * subpage of register, this happens for accept-invitation pages as well.
+ * However, people are more likely to try to visit this page than the vanilla
+ * register page, because they've gotten an email inviting them to the site.
+ *
+ * So this function catches logged-in visits to /register/accept-invitation,
+ * and if the email address in the URL matches the logged-in user's email
+ * address, redirects them to their invite-anyone page to see the a message.
+ *
+ * @since 1.0.20
+ */
+function invite_anyone_already_accepted_redirect( $redirect ) {
+	global $bp;
+
+	if ( bp_is_current_action( 'accept-invitation' ) && $reg_email = urldecode( bp_action_variable( 0 ) ) ) {
+		if ( bp_core_get_user_email( bp_loggedin_user_id() ) !== $reg_email ) {
+			return;
+		}
+
+		$redirect = add_query_arg( 'already', 'accepted', trailingslashit( bp_loggedin_user_domain() . $bp->invite_anyone->slug ) );
+	}
+
+	return $redirect;
+}
+add_filter( 'bp_loggedin_register_page_redirect_to', 'invite_anyone_already_accepted_redirect' );
